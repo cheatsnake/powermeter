@@ -107,7 +107,6 @@ jobs:
           fi
           formula_version="${TAG//-/.}"
           tap_dir="$(mktemp -d)"
-          gh auth setup-git
           GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/cheatsnake/homebrew-tap.git "$tap_dir"
           mkdir -p "$tap_dir/Formula"
           sed \
@@ -124,4 +123,4 @@ jobs:
             exit 0
           fi
           git commit -m "powermeter ${TAG}"
-          GIT_TERMINAL_PROMPT=0 git push
+          GIT_TERMINAL_PROMPT=0 git push "https://x-access-token:${GH_TOKEN}@github.com/cheatsnake/homebrew-tap.git" HEAD
