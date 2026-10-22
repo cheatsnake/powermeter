@@ -1,15 +1,16 @@
 package tui
 
-import "strings"
+import (
+	"strings"
 
-const (
-	projectURL = "https://github.com/cheatsnake/powermeter"
-	appVersion = "2026-10-22-1"
+	"powermeter/internal/version"
 )
+
+const projectURL = "https://github.com/cheatsnake/powermeter"
 
 func (m Model) viewAbout() string {
 	var b strings.Builder
-	b.WriteString(m.header("About Powermeter", "Version "+appVersion))
+	b.WriteString(m.header("About Powermeter", "Version "+version.Version))
 
 	b.WriteString("Powermeter shows how much power each process consumes on macOS.\n")
 	b.WriteString("It reads data from the built-in powermetrics utility, so it needs\n")

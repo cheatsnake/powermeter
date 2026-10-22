@@ -1,0 +1,127 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "[0-9]*-[0-9]*-[0-9]*-[0-9]*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+$ ]]; then
+            echo "::error::Tag '$TAG' does not match yyyy-mm-dd-N"
+            exit 1
+          fi
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build universal binary
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/bin dist/archive
+          ldflags="-s -w -X powermeter/internal/version.Version=${TAG}"
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$ldflags" -o dist/bin/powermeter-arm64 ./cmd/cli
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "$ldflags" -o dist/bin/powermeter-amd64 ./cmd/cli
+          lipo -create -output dist/bin/powermeter dist/bin/powermeter-arm64 dist/bin/powermeter-amd64
+          codesign --force --sign - dist/bin/powermeter
+          codesign --verify --verbose=2 dist/bin/powermeter
+          lipo -info dist/bin/powermeter
+          cp dist/bin/powermeter dist/archive/powermeter
+          cp LICENSE dist/archive/LICENSE
+          tar -czf "dist/powermeter_${TAG}_darwin_universal.tar.gz" -C dist/archive powermeter LICENSE
+
+      - name: Checksums
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          shasum -a 256 "dist/powermeter_${TAG}_darwin_universal.tar.gz" | awk '{print $1}' > "dist/powermeter_${TAG}_darwin_universal.tar.gz.sha256"
+          echo "sha256=$(cat dist/powermeter_${TAG}_darwin_universal.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+        id: checksums
+
+      - name: Release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          awk -v ver="$TAG" '
+            $0 ~ "^## " ver "$" { flag = 1; next }
+            /^## / { flag = 0 }
+            flag
+          ' CHANGELOG.md > dist/release-notes.md
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -s dist/release-notes.md ]; then
+            notes=(--notes-file dist/release-notes.md)
+          else
+            notes=(--generate-notes)
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "dist/powermeter_${TAG}_darwin_universal.tar.gz" "dist/powermeter_${TAG}_darwin_universal.tar.gz.sha256" --clobber
+          else
+            gh release create "$TAG" "dist/powermeter_${TAG}_darwin_universal.tar.gz" "dist/powermeter_${TAG}_darwin_universal.tar.gz.sha256" --title "$TAG" "${notes[@]}"
+          fi
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          SHA256: ${{ steps.checksums.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::TAP_GITHUB_TOKEN secret is not set"
+            exit 1
+          fi
+          formula_version="${TAG//-/.}"
+          tap_dir="$(mktemp -d)"
+          gh auth setup-git
+          GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/cheatsnake/homebrew-tap.git "$tap_dir"
+          mkdir -p "$tap_dir/Formula"
+          sed \
+            -e "s|@TAG@|${TAG}|g" \
+            -e "s|@VERSION@|${formula_version}|g" \
+            -e "s|@SHA256@|${SHA256}|g" \
+            .github/homebrew/powermeter.rb.tmpl > "$tap_dir/Formula/powermeter.rb"
+          cd "$tap_dir"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/powermeter.rb
+          if git diff --cached --quiet; then
+            echo "Formula is unchanged; skipping push"
+            exit 0
+          fi
+          git commit -m "powermeter ${TAG}"
+          GIT_TERMINAL_PROMPT=0 git push

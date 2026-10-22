@@ -10,9 +10,15 @@ import (
 	"powermeter/internal/powermetrics"
 	"powermeter/internal/storage"
 	"powermeter/internal/tui"
+	"powermeter/internal/version"
 )
 
 func main() {
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Printf("powermeter %s\n", version.Version)
+		return
+	}
+
 	store, err := storage.DefaultStore()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "powermeter:", err)

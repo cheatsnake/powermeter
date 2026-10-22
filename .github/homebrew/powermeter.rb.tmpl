@@ -1,0 +1,25 @@
+class Powermeter < Formula
+  desc "Measure power usage per process on macOS"
+  homepage "https://github.com/cheatsnake/powermeter"
+  url "https://github.com/cheatsnake/powermeter/releases/download/@TAG@/powermeter_@TAG@_darwin_universal.tar.gz"
+  version "@VERSION@"
+  sha256 "@SHA256@"
+  license "MIT"
+
+  depends_on macos: :ventura
+
+  def install
+    bin.install "powermeter"
+  end
+
+  def caveats
+    <<~EOS
+      Powermeter runs the macOS powermetrics utility.
+      It asks for administrator privileges for each measurement.
+    EOS
+  end
+
+  test do
+    assert_match "@TAG@", shell_output("#{bin}/powermeter --version")
+  end
+end

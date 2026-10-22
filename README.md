@@ -8,10 +8,16 @@ It runs the built-in `powermetrics` utility for a period of time that you choose
 
 ## Requirements
 
-- macOS 10.9+ (first release with `powermetrics` utility)
+- macOS 13+ (Go 1.27 requires macOS Ventura or newer)
 - Administrator privileges
 
 ## Installation
+
+### Homebrew
+
+```sh
+brew install cheatsnake/tap/powermeter
+```
 
 ### Build from source
 
